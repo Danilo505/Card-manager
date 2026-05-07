@@ -16,6 +16,8 @@ import {
   CalendarDays,
   Clock3,
   ShieldAlert,
+  LayoutDashboard,
+  ListChecks,
 } from "lucide-react";
 
 function Card({ className = "", children }) {
@@ -211,6 +213,7 @@ export default function App() {
   const [showCardModal, setShowCardModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
+  const [activeView, setActiveView] = useState("dashboard");
 
   function persist(nextCards, nextTransactions) {
     writeStorage({ cards: nextCards, transactions: nextTransactions });
@@ -520,459 +523,143 @@ export default function App() {
       </div>
 
       <main className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <header className="mb-8 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-slate-300 backdrop-blur">
-              <CreditCard className="h-4 w-4" />
-              Controle moderno de cartões
+        <header className="mb-8 flex flex-col gap-6">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-slate-300 backdrop-blur">
+                <CreditCard className="h-4 w-4" />
+                Controle moderno de cartões
+              </div>
+
+              <h1 className="text-3xl font-bold tracking-tight md:text-5xl">
+                Organizador de Cartões
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-slate-400">
+                Cadastre compras à vista ou parceladas. O sistema cria as
+                parcelas automaticamente com base no vencimento do cartão.
+              </p>
             </div>
 
-            <h1 className="text-3xl font-bold tracking-tight md:text-5xl">
-              Organizador de Cartões
-            </h1>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                onClick={() => {
+                  setEditingCard(null);
+                  setShowCardModal(true);
+                }}
+                className="rounded-2xl bg-white/10 hover:bg-white/15"
+              >
+                <CreditCard className="mr-2 h-4 w-4" />
+                Novo cartão
+              </Button>
 
-            <p className="mt-3 max-w-2xl text-slate-400">
-              Cadastre compras à vista ou parceladas. O sistema cria as parcelas
-              automaticamente com base no vencimento do cartão.
-            </p>
+              <Button
+                onClick={() => setShowTransactionModal(true)}
+                className="rounded-2xl bg-blue-600 hover:bg-blue-500"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Nova compra
+              </Button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Button
-              onClick={() => {
-                setEditingCard(null);
-                setShowCardModal(true);
-              }}
-              className="rounded-2xl bg-white/10 hover:bg-white/15"
-            >
-              <CreditCard className="mr-2 h-4 w-4" />
-              Novo cartão
-            </Button>
+          <nav className="flex flex-wrap gap-2 rounded-3xl border border-white/10 bg-white/[0.04] p-2 backdrop-blur">
+            <NavButton
+              active={activeView === "dashboard"}
+              onClick={() => setActiveView("dashboard")}
+              icon={LayoutDashboard}
+              label="Dashboard"
+            />
 
-            <Button
-              onClick={() => setShowTransactionModal(true)}
-              className="rounded-2xl bg-blue-600 hover:bg-blue-500"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Nova compra
-            </Button>
-          </div>
+            <NavButton
+              active={activeView === "cards"}
+              onClick={() => setActiveView("cards")}
+              icon={CreditCard}
+              label="Cartões"
+            />
+
+            <NavButton
+              active={activeView === "transactions"}
+              onClick={() => setActiveView("transactions")}
+              icon={ListChecks}
+              label="Compras"
+            />
+          </nav>
         </header>
 
-        <section className="mb-6 grid gap-4 md:grid-cols-4">
-          <MetricCard
-            icon={Wallet}
-            title="Fatura do mês"
-            value={BRL.format(summary.total)}
-            subtitle={`${summary.count} lançamentos`}
-          />
-
-          <MetricCard
-            icon={AlertCircle}
-            title="Em aberto"
-            value={BRL.format(summary.open)}
-            subtitle="Ainda não pago"
-          />
-
-          <MetricCard
-            icon={CheckCircle2}
-            title="Pago"
-            value={BRL.format(summary.paid)}
-            subtitle="Baixado no mês"
-          />
-
-          <MetricCard
-            icon={Receipt}
-            title="Parcelamentos"
-            value={summary.installmentGroups}
-            subtitle="Compras parceladas ativas"
-          />
-        </section>
-
-        <section className="mb-6 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl backdrop-blur md:p-6">
-          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
-                <CalendarDays className="h-4 w-4" />
-                Agenda financeira
-              </div>
-
-              <h2 className="text-xl font-bold">Dashboard de vencimentos</h2>
-
-              <p className="text-sm text-slate-400">
-                Veja os próximos vencimentos, a fatura do mês e o limite
-                disponível de cada cartão.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-              <p className="text-xs text-slate-500">Mês selecionado</p>
-              <p className="text-sm font-semibold capitalize">
-                {monthLabel(selectedMonth)}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {dueDashboard.map((card) => (
-              <Card
-                key={`due-${card.id}`}
-                className="rounded-3xl border border-white/10 bg-white/[0.03] text-white shadow-xl"
-              >
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-semibold">{card.name}</p>
-                      <p className="text-sm text-slate-400">
-                        {card.dueDate
-                          ? "Data definida manualmente"
-                          : `Vencimento todo dia ${String(
-                              card.dueDay || 1
-                            ).padStart(2, "0")}`}
-                      </p>
-                    </div>
-
-                    <DueBadge days={card.daysToDue} />
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-2 gap-3">
-                    <InfoBox
-                      title="Próximo vencimento"
-                      value={formatDateBR(card.nextDueDate)}
-                    />
-
-                    <InfoBox
-                      title="Fatura do mês"
-                      value={BRL.format(card.invoiceTotal)}
-                    />
-
-                    <InfoBox
-                      title="Limite disponível"
-                      value={BRL.format(card.availableLimit)}
-                      valueClassName={
-                        card.availableLimit <= 0
-                          ? "text-red-300"
-                          : "text-emerald-300"
-                      }
-                    />
-
-                    <InfoBox
-                      title="Itens em aberto"
-                      value={card.openTransactions}
-                    />
-                  </div>
-
-                  {card.isOverLimit && (
-                    <div className="mt-4 flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                      <ShieldAlert className="h-4 w-4" />
-                      Este cartão ultrapassou o limite cadastrado.
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-
-        <section className="mb-6 grid gap-4 lg:grid-cols-3">
-          {cardUsage.map((card) => (
-            <motion.div key={card.id} layout>
-              <Card className="overflow-hidden rounded-3xl border-white/10 bg-white/[0.04] text-white shadow-2xl backdrop-blur">
-                <CardContent className="p-5">
-                  <div
-                    className={`mb-5 rounded-3xl bg-gradient-to-br ${card.color} p-5 shadow-lg`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <CreditCard className="h-7 w-7" />
-                      <span className="text-sm opacity-80">Crédito</span>
-                    </div>
-
-                    <div className="mt-8 text-xl font-semibold">
-                      {card.name}
-                    </div>
-
-                    <div className="mt-1 text-sm opacity-80">
-                      Limite {BRL.format(card.limit)}
-                    </div>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm text-slate-400">Limite usado</p>
-
-                      <p className="text-2xl font-bold">
-                        {BRL.format(card.usedLimit)}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-500">
-                        Fatura do mês: {BRL.format(card.invoiceTotal)}
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Disponível
-                      </p>
-
-                      <p
-                        className={`text-lg font-semibold ${
-                          card.availableLimit <= 0
-                            ? "text-red-300"
-                            : "text-emerald-300"
-                        }`}
-                      >
-                        {BRL.format(card.availableLimit)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 h-2 rounded-full bg-white/10">
-                    <div
-                      className={`h-2 rounded-full ${
-                        card.isOverLimit ? "bg-red-300" : "bg-white"
-                      }`}
-                      style={{ width: `${card.usagePercent}%` }}
-                    />
-                  </div>
-
-                  <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                    <span>Usado {BRL.format(card.usedLimit)}</span>
-                    <span>Total {BRL.format(card.limit)}</span>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between gap-3 text-xs">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-slate-300">
-                      <Clock3 className="h-3.5 w-3.5" />
-                      Vence em {formatDateBR(card.nextDueDate)}
-                    </span>
-
-                    <span className="text-slate-400">
-                      {card.daysToDue === 0
-                        ? "vence hoje"
-                        : card.daysToDue < 0
-                        ? `${Math.abs(card.daysToDue)} dias atrasado`
-                        : `${card.daysToDue} dias`}
-                    </span>
-                  </div>
-
-                  <div className="mt-5 flex gap-2">
-                    <Button
-                      onClick={() => {
-                        setEditingCard(card);
-                        setShowCardModal(true);
-                      }}
-                      className="flex-1 rounded-2xl bg-white/10 text-white hover:bg-white/15"
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Editar
-                    </Button>
-
-                    <Button
-                      onClick={() => removeCard(card.id)}
-                      className="rounded-2xl bg-red-500/10 text-red-300 hover:bg-red-500/20"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl backdrop-blur md:p-6">
-          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-xl font-bold">Compras e parcelas</h2>
-
-              <p className="text-sm text-slate-400">
-                Visualize a fatura por mês, cartão, categoria ou descrição.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar compra..."
-                  className="h-11 rounded-2xl border border-white/10 bg-black/30 pl-10 pr-3 text-sm outline-none ring-blue-500/40 focus:ring-2"
-                />
-              </div>
-
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="h-11 rounded-2xl border border-white/10 bg-black/30 px-3 text-sm outline-none ring-blue-500/40 focus:ring-2"
-              >
-                {monthOptions.map((key) => (
-                  <option key={key} value={key} className="bg-slate-950">
-                    {monthLabel(key)}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={cardFilter}
-                onChange={(e) => setCardFilter(e.target.value)}
-                className="h-11 rounded-2xl border border-white/10 bg-black/30 px-3 text-sm outline-none ring-blue-500/40 focus:ring-2"
-              >
-                <option value="all" className="bg-slate-950">
-                  Todos os cartões
-                </option>
-
-                {cards.map((card) => (
-                  <option
-                    key={card.id}
-                    value={card.id}
-                    className="bg-slate-950"
-                  >
-                    {card.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-3">
-            <Button
-              onClick={exportJSON}
-              variant="secondary"
-              className="rounded-2xl bg-white/10 text-white hover:bg-white/15"
+        <AnimatePresence mode="wait">
+          {activeView === "dashboard" && (
+            <motion.div
+              key="dashboard"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.18 }}
+              className="space-y-6"
             >
-              <Download className="mr-2 h-4 w-4" />
-              Exportar
-            </Button>
+              <SummarySection summary={summary} />
 
-            <label className="inline-flex h-10 cursor-pointer items-center rounded-2xl bg-white/10 px-4 text-sm font-medium hover:bg-white/15">
-              <Upload className="mr-2 h-4 w-4" />
-              Importar
-
-              <input
-                type="file"
-                accept="application/json"
-                onChange={importJSON}
-                className="hidden"
+              <DashboardSection
+                dueDashboard={dueDashboard}
+                selectedMonth={selectedMonth}
+                setSelectedMonth={setSelectedMonth}
               />
-            </label>
-          </div>
+            </motion.div>
+          )}
 
-          <div className="overflow-hidden rounded-2xl border border-white/10">
-            <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-              <thead className="bg-white/5 text-slate-300">
-                <tr>
-                  <th className="px-4 py-3">Compra</th>
-                  <th className="px-4 py-3">Vencimento</th>
-                  <th className="px-4 py-3">Descrição</th>
-                  <th className="px-4 py-3">Cartão</th>
-                  <th className="px-4 py-3">Categoria</th>
-                  <th className="px-4 py-3">Parcela</th>
-                  <th className="px-4 py-3 text-right">Valor</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
+          {activeView === "cards" && (
+            <motion.div
+              key="cards"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.18 }}
+              className="space-y-6"
+            >
+              <SectionHeader
+                badge="Cartões"
+                title="Meus cartões"
+                description="Veja limite usado, limite disponível, vencimento e fatura mensal de cada cartão."
+                icon={CreditCard}
+              />
 
-              <tbody>
-                {filteredTransactions.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan="9"
-                      className="px-4 py-12 text-center text-slate-400"
-                    >
-                      Nenhuma compra encontrada para este mês.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTransactions.map((item) => {
-                    const card = cards.find((card) => card.id === item.cardId);
+              <CardsSection
+                cardUsage={cardUsage}
+                setEditingCard={setEditingCard}
+                setShowCardModal={setShowCardModal}
+                removeCard={removeCard}
+              />
+            </motion.div>
+          )}
 
-                    return (
-                      <tr
-                        key={item.id}
-                        className="border-t border-white/10 hover:bg-white/[0.03]"
-                      >
-                        <td className="px-4 py-3 text-slate-300">
-                          {formatDateBR(item.purchaseDate || item.dueDate)}
-                        </td>
-
-                        <td className="px-4 py-3 text-slate-300">
-                          {formatDateBR(item.dueDate)}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="font-medium">
-                            {item.description}
-                          </div>
-
-                          {item.notes && (
-                            <div className="text-xs text-slate-500">
-                              {item.notes}
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3 text-slate-300">
-                          {card?.name || "Removido"}
-                        </td>
-
-                        <td className="px-4 py-3 text-slate-300">
-                          {item.category}
-                        </td>
-
-                        <td className="px-4 py-3 text-slate-300">
-                          {item.installments > 1
-                            ? `${item.installmentNumber}/${item.installments}`
-                            : "À vista"}
-                        </td>
-
-                        <td className="px-4 py-3 text-right font-semibold">
-                          {BRL.format(item.amount)}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => togglePaid(item.id)}
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${
-                              item.status === "paid"
-                                ? "bg-emerald-500/15 text-emerald-300"
-                                : "bg-amber-500/15 text-amber-300"
-                            }`}
-                          >
-                            {item.status === "paid" ? "Pago" : "Aberto"}
-                          </button>
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => {
-                                setEditingTransaction(item);
-                                setShowTransactionModal(true);
-                              }}
-                              className="rounded-xl p-2 text-slate-300 hover:bg-white/10 hover:text-white"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-
-                            <button
-                              onClick={() => removeTransaction(item.id)}
-                              className="rounded-xl p-2 text-slate-300 hover:bg-red-500/10 hover:text-red-300"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+          {activeView === "transactions" && (
+            <motion.div
+              key="transactions"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.18 }}
+            >
+              <TransactionsSection
+                query={query}
+                setQuery={setQuery}
+                selectedMonth={selectedMonth}
+                setSelectedMonth={setSelectedMonth}
+                monthOptions={monthOptions}
+                cardFilter={cardFilter}
+                setCardFilter={setCardFilter}
+                cards={cards}
+                filteredTransactions={filteredTransactions}
+                togglePaid={togglePaid}
+                removeTransaction={removeTransaction}
+                setEditingTransaction={setEditingTransaction}
+                setShowTransactionModal={setShowTransactionModal}
+                exportJSON={exportJSON}
+                importJSON={importJSON}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       <AnimatePresence>
@@ -1000,6 +687,519 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function NavButton({ active, onClick, icon: Icon, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition ${
+        active
+          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+          : "text-slate-300 hover:bg-white/10 hover:text-white"
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}
+
+function SectionHeader({ badge, title, description, icon: Icon }) {
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-2xl backdrop-blur md:p-6">
+      <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+        <Icon className="h-4 w-4" />
+        {badge}
+      </div>
+
+      <h2 className="text-2xl font-bold">{title}</h2>
+
+      <p className="mt-1 text-sm text-slate-400">{description}</p>
+    </section>
+  );
+}
+
+function SummarySection({ summary }) {
+  return (
+    <section className="grid gap-4 md:grid-cols-4">
+      <MetricCard
+        icon={Wallet}
+        title="Fatura do mês"
+        value={BRL.format(summary.total)}
+        subtitle={`${summary.count} lançamentos`}
+      />
+
+      <MetricCard
+        icon={AlertCircle}
+        title="Em aberto"
+        value={BRL.format(summary.open)}
+        subtitle="Ainda não pago"
+      />
+
+      <MetricCard
+        icon={CheckCircle2}
+        title="Pago"
+        value={BRL.format(summary.paid)}
+        subtitle="Baixado no mês"
+      />
+
+      <MetricCard
+        icon={Receipt}
+        title="Parcelamentos"
+        value={summary.installmentGroups}
+        subtitle="Compras parceladas ativas"
+      />
+    </section>
+  );
+}
+
+function DashboardSection({ dueDashboard, selectedMonth, setSelectedMonth }) {
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl backdrop-blur md:p-6">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+            <CalendarDays className="h-4 w-4" />
+            Agenda financeira
+          </div>
+
+          <h2 className="text-xl font-bold">Dashboard de vencimentos</h2>
+
+          <p className="text-sm text-slate-400">
+            Veja os próximos vencimentos, a fatura do mês e o limite disponível
+            de cada cartão.
+          </p>
+        </div>
+
+        <MonthPicker
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+        />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {dueDashboard.map((card) => (
+          <Card
+            key={`due-${card.id}`}
+            className="rounded-3xl border border-white/10 bg-white/[0.03] text-white shadow-xl"
+          >
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold">{card.name}</p>
+                  <p className="text-sm text-slate-400">
+                    {card.dueDate
+                      ? "Data definida manualmente"
+                      : `Vencimento todo dia ${String(
+                          card.dueDay || 1
+                        ).padStart(2, "0")}`}
+                  </p>
+                </div>
+
+                <DueBadge days={card.daysToDue} />
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <InfoBox
+                  title="Próximo vencimento"
+                  value={formatDateBR(card.nextDueDate)}
+                />
+
+                <InfoBox
+                  title="Fatura do mês"
+                  value={BRL.format(card.invoiceTotal)}
+                />
+
+                <InfoBox
+                  title="Limite disponível"
+                  value={BRL.format(card.availableLimit)}
+                  valueClassName={
+                    card.availableLimit <= 0
+                      ? "text-red-300"
+                      : "text-emerald-300"
+                  }
+                />
+
+                <InfoBox title="Itens em aberto" value={card.openTransactions} />
+              </div>
+
+              {card.isOverLimit && (
+                <div className="mt-4 flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  <ShieldAlert className="h-4 w-4" />
+                  Este cartão ultrapassou o limite cadastrado.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MonthPicker({ selectedMonth, setSelectedMonth }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+      <p className="mb-2 text-xs text-slate-500">Mês selecionado</p>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            setSelectedMonth(addMonths(`${selectedMonth}-01`, -1).slice(0, 7))
+          }
+          className="h-10 rounded-xl bg-white/10 px-3 text-sm hover:bg-white/15"
+        >
+          ←
+        </button>
+
+        <input
+          type="month"
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+          className="h-10 rounded-xl border border-white/10 bg-black/30 px-3 text-sm font-semibold text-white outline-none ring-blue-500/40 focus:ring-2"
+        />
+
+        <button
+          type="button"
+          onClick={() =>
+            setSelectedMonth(addMonths(`${selectedMonth}-01`, 1).slice(0, 7))
+          }
+          className="h-10 rounded-xl bg-white/10 px-3 text-sm hover:bg-white/15"
+        >
+          →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CardsSection({
+  cardUsage,
+  setEditingCard,
+  setShowCardModal,
+  removeCard,
+}) {
+  return (
+    <section className="grid gap-4 lg:grid-cols-3">
+      {cardUsage.map((card) => (
+        <motion.div key={card.id} layout>
+          <Card className="overflow-hidden rounded-3xl border-white/10 bg-white/[0.04] text-white shadow-2xl backdrop-blur">
+            <CardContent className="p-5">
+              <div
+                className={`mb-5 rounded-3xl bg-gradient-to-br ${card.color} p-5 shadow-lg`}
+              >
+                <div className="flex items-center justify-between">
+                  <CreditCard className="h-7 w-7" />
+                  <span className="text-sm opacity-80">Crédito</span>
+                </div>
+
+                <div className="mt-8 text-xl font-semibold">{card.name}</div>
+
+                <div className="mt-1 text-sm opacity-80">
+                  Limite {BRL.format(card.limit)}
+                </div>
+              </div>
+
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-slate-400">Limite usado</p>
+
+                  <p className="text-2xl font-bold">
+                    {BRL.format(card.usedLimit)}
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Fatura do mês: {BRL.format(card.invoiceTotal)}
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Disponível
+                  </p>
+
+                  <p
+                    className={`text-lg font-semibold ${
+                      card.availableLimit <= 0
+                        ? "text-red-300"
+                        : "text-emerald-300"
+                    }`}
+                  >
+                    {BRL.format(card.availableLimit)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 h-2 rounded-full bg-white/10">
+                <div
+                  className={`h-2 rounded-full ${
+                    card.isOverLimit ? "bg-red-300" : "bg-white"
+                  }`}
+                  style={{ width: `${card.usagePercent}%` }}
+                />
+              </div>
+
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                <span>Usado {BRL.format(card.usedLimit)}</span>
+                <span>Total {BRL.format(card.limit)}</span>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-slate-300">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  Vence em {formatDateBR(card.nextDueDate)}
+                </span>
+
+                <span className="text-slate-400">
+                  {card.daysToDue === 0
+                    ? "vence hoje"
+                    : card.daysToDue < 0
+                    ? `${Math.abs(card.daysToDue)} dias atrasado`
+                    : `${card.daysToDue} dias`}
+                </span>
+              </div>
+
+              <div className="mt-5 flex gap-2">
+                <Button
+                  onClick={() => {
+                    setEditingCard(card);
+                    setShowCardModal(true);
+                  }}
+                  className="flex-1 rounded-2xl bg-white/10 text-white hover:bg-white/15"
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Editar
+                </Button>
+
+                <Button
+                  onClick={() => removeCard(card.id)}
+                  className="rounded-2xl bg-red-500/10 text-red-300 hover:bg-red-500/20"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      ))}
+    </section>
+  );
+}
+
+function TransactionsSection({
+  query,
+  setQuery,
+  selectedMonth,
+  setSelectedMonth,
+  monthOptions,
+  cardFilter,
+  setCardFilter,
+  cards,
+  filteredTransactions,
+  togglePaid,
+  removeTransaction,
+  setEditingTransaction,
+  setShowTransactionModal,
+  exportJSON,
+  importJSON,
+}) {
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl backdrop-blur md:p-6">
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+            <ListChecks className="h-4 w-4" />
+            Compras
+          </div>
+
+          <h2 className="text-xl font-bold">Compras e parcelas</h2>
+
+          <p className="text-sm text-slate-400">
+            Visualize a fatura por mês, cartão, categoria ou descrição.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar compra..."
+              className="h-11 rounded-2xl border border-white/10 bg-black/30 pl-10 pr-3 text-sm outline-none ring-blue-500/40 focus:ring-2"
+            />
+          </div>
+
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="h-11 rounded-2xl border border-white/10 bg-black/30 px-3 text-sm outline-none ring-blue-500/40 focus:ring-2"
+          >
+            {monthOptions.map((key) => (
+              <option key={key} value={key} className="bg-slate-950">
+                {monthLabel(key)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={cardFilter}
+            onChange={(e) => setCardFilter(e.target.value)}
+            className="h-11 rounded-2xl border border-white/10 bg-black/30 px-3 text-sm outline-none ring-blue-500/40 focus:ring-2"
+          >
+            <option value="all" className="bg-slate-950">
+              Todos os cartões
+            </option>
+
+            {cards.map((card) => (
+              <option key={card.id} value={card.id} className="bg-slate-950">
+                {card.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-3">
+        <Button
+          onClick={exportJSON}
+          variant="secondary"
+          className="rounded-2xl bg-white/10 text-white hover:bg-white/15"
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Exportar
+        </Button>
+
+        <label className="inline-flex h-10 cursor-pointer items-center rounded-2xl bg-white/10 px-4 text-sm font-medium hover:bg-white/15">
+          <Upload className="mr-2 h-4 w-4" />
+          Importar
+
+          <input
+            type="file"
+            accept="application/json"
+            onChange={importJSON}
+            className="hidden"
+          />
+        </label>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-white/10">
+        <table className="w-full min-w-[950px] border-collapse text-left text-sm">
+          <thead className="bg-white/5 text-slate-300">
+            <tr>
+              <th className="px-4 py-3">Compra</th>
+              <th className="px-4 py-3">Vencimento</th>
+              <th className="px-4 py-3">Descrição</th>
+              <th className="px-4 py-3">Cartão</th>
+              <th className="px-4 py-3">Categoria</th>
+              <th className="px-4 py-3">Parcela</th>
+              <th className="px-4 py-3 text-right">Valor</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 text-right">Ações</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {filteredTransactions.length === 0 ? (
+              <tr>
+                <td
+                  colSpan="9"
+                  className="px-4 py-12 text-center text-slate-400"
+                >
+                  Nenhuma compra encontrada para este mês.
+                </td>
+              </tr>
+            ) : (
+              filteredTransactions.map((item) => {
+                const card = cards.find((card) => card.id === item.cardId);
+
+                return (
+                  <tr
+                    key={item.id}
+                    className="border-t border-white/10 hover:bg-white/[0.03]"
+                  >
+                    <td className="px-4 py-3 text-slate-300">
+                      {formatDateBR(item.purchaseDate || item.dueDate)}
+                    </td>
+
+                    <td className="px-4 py-3 text-slate-300">
+                      {formatDateBR(item.dueDate)}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{item.description}</div>
+
+                      {item.notes && (
+                        <div className="text-xs text-slate-500">
+                          {item.notes}
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-slate-300">
+                      {card?.name || "Removido"}
+                    </td>
+
+                    <td className="px-4 py-3 text-slate-300">
+                      {item.category}
+                    </td>
+
+                    <td className="px-4 py-3 text-slate-300">
+                      {item.installments > 1
+                        ? `${item.installmentNumber}/${item.installments}`
+                        : "À vista"}
+                    </td>
+
+                    <td className="px-4 py-3 text-right font-semibold">
+                      {BRL.format(item.amount)}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => togglePaid(item.id)}
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          item.status === "paid"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : "bg-amber-500/15 text-amber-300"
+                        }`}
+                      >
+                        {item.status === "paid" ? "Pago" : "Aberto"}
+                      </button>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingTransaction(item);
+                            setShowTransactionModal(true);
+                          }}
+                          className="rounded-xl p-2 text-slate-300 hover:bg-white/10 hover:text-white"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          onClick={() => removeTransaction(item.id)}
+                          className="rounded-xl p-2 text-slate-300 hover:bg-red-500/10 hover:text-red-300"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -1123,11 +1323,7 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
             onChange={(value) => setForm({ ...form, cardId: value })}
           >
             {cards.map((card) => (
-              <option
-                key={card.id}
-                value={card.id}
-                className="bg-slate-950"
-              >
+              <option key={card.id} value={card.id} className="bg-slate-950">
                 {card.name}
               </option>
             ))}
@@ -1139,11 +1335,7 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
             onChange={(value) => setForm({ ...form, category: value })}
           >
             {categories.map((category) => (
-              <option
-                key={category}
-                value={category}
-                className="bg-slate-950"
-              >
+              <option key={category} value={category} className="bg-slate-950">
                 {category}
               </option>
             ))}
@@ -1283,8 +1475,8 @@ function CardModal({ card, onClose, onSave }) {
           </p>
           <p className="mt-1 text-sm text-slate-500">
             Ao cadastrar uma compra, o sistema usa esta data para calcular
-            automaticamente a primeira parcela. As próximas parcelas são lançadas
-            nos meses seguintes.
+            automaticamente a primeira parcela. As próximas parcelas são
+            lançadas nos meses seguintes.
           </p>
         </div>
 
