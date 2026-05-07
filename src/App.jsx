@@ -121,6 +121,10 @@ function formatDateBR(dateString) {
   return `${day}/${month}/${year}`;
 }
 
+function normalizeResponsibleName(value) {
+  return value?.trim() || "Sem responsável";
+}
+
 function getNextDueDate(card) {
   if (card.dueDate) return card.dueDate;
 
@@ -257,6 +261,9 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [cardFilter, setCardFilter] = useState("all");
   const [responsibleFilter, setResponsibleFilter] = useState("all");
+  const [chartResponsibleFilter, setChartResponsibleFilter] = useState("all");
+  const [selectedChartResponsible, setSelectedChartResponsible] =
+    useState(null);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -291,9 +298,7 @@ export default function App() {
     const names = new Set();
 
     for (const item of transactions) {
-      if (item.responsible?.trim()) {
-        names.add(item.responsible.trim());
-      }
+      names.add(normalizeResponsibleName(item.responsible));
     }
 
     return [...names].sort((a, b) => a.localeCompare(b));
@@ -306,10 +311,14 @@ export default function App() {
       .filter(
         (item) =>
           responsibleFilter === "all" ||
-          (item.responsible || "Sem responsável") === responsibleFilter
+          normalizeResponsibleName(item.responsible) === responsibleFilter
       )
       .filter((item) => {
-        const text = `${item.description} ${item.category} ${item.responsible}`.toLowerCase();
+        const text =
+          `${item.description} ${item.category} ${normalizeResponsibleName(
+            item.responsible
+          )}`.toLowerCase();
+
         return text.includes(query.toLowerCase());
       })
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
@@ -394,26 +403,44 @@ export default function App() {
       .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
   }, [cardUsage]);
 
-  const chartData = useMemo(() => {
-    const monthTransactions = transactions.filter(
+  const chartTransactions = useMemo(() => {
+    const base = transactions.filter(
       (item) => monthKey(item.dueDate) === selectedMonth
     );
 
+    if (chartResponsibleFilter === "all") return base;
+
+    return base.filter(
+      (item) =>
+        normalizeResponsibleName(item.responsible) === chartResponsibleFilter
+    );
+  }, [transactions, selectedMonth, chartResponsibleFilter]);
+
+  const chartData = useMemo(() => {
     const byResponsible = sumBy(
-      monthTransactions,
-      (item) => item.responsible || "Sem responsável"
+      chartTransactions,
+      (item) => normalizeResponsibleName(item.responsible)
     );
 
-    const byCategory = sumBy(monthTransactions, (item) => item.category);
+    const byCategory = sumBy(chartTransactions, (item) => item.category);
 
-    const byCard = sumBy(monthTransactions, (item) => {
+    const byCard = sumBy(chartTransactions, (item) => {
       const card = cards.find((card) => card.id === item.cardId);
       return card?.name || "Cartão removido";
     });
 
+    const monthlyBase =
+      chartResponsibleFilter === "all"
+        ? transactions
+        : transactions.filter(
+            (item) =>
+              normalizeResponsibleName(item.responsible) ===
+              chartResponsibleFilter
+          );
+
     const monthlyMap = new Map();
 
-    for (const item of transactions) {
+    for (const item of monthlyBase) {
       const key = monthKey(item.dueDate);
       monthlyMap.set(key, (monthlyMap.get(key) || 0) + Number(item.amount || 0));
     }
@@ -433,7 +460,23 @@ export default function App() {
       byCard,
       monthlyEvolution,
     };
-  }, [transactions, selectedMonth, cards]);
+  }, [chartTransactions, transactions, chartResponsibleFilter, cards]);
+
+  const chartDetailsResponsible =
+    selectedChartResponsible ||
+    (chartResponsibleFilter !== "all" ? chartResponsibleFilter : null);
+
+  const chartDetailsRows = useMemo(() => {
+    if (!chartDetailsResponsible) return [];
+
+    return transactions
+      .filter((item) => monthKey(item.dueDate) === selectedMonth)
+      .filter(
+        (item) =>
+          normalizeResponsibleName(item.responsible) === chartDetailsResponsible
+      )
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [transactions, selectedMonth, chartDetailsResponsible]);
 
   function saveTransaction(form) {
     const amount = Number(form.amount);
@@ -446,7 +489,7 @@ export default function App() {
           ? {
               ...item,
               description: form.description,
-              responsible: form.responsible,
+              responsible: form.responsible.trim(),
               amount: Number(form.amount),
               cardId: form.cardId,
               category: form.category,
@@ -476,7 +519,7 @@ export default function App() {
       id: uid(),
       groupId,
       description: form.description,
-      responsible: form.responsible,
+      responsible: form.responsible.trim(),
       amount:
         index === installments - 1
           ? Math.round((amount - perInstallment * (installments - 1)) * 100) /
@@ -791,6 +834,14 @@ export default function App() {
                 chartData={chartData}
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
+                responsibleOptions={responsibleOptions}
+                chartResponsibleFilter={chartResponsibleFilter}
+                setChartResponsibleFilter={setChartResponsibleFilter}
+                selectedChartResponsible={selectedChartResponsible}
+                setSelectedChartResponsible={setSelectedChartResponsible}
+                chartDetailsResponsible={chartDetailsResponsible}
+                chartDetailsRows={chartDetailsRows}
+                cards={cards}
               />
             </motion.div>
           )}
@@ -1018,6 +1069,17 @@ function CardsSection({
   setShowCardModal,
   removeCard,
 }) {
+  const sortedCards = cardUsage
+    .slice()
+    .sort((a, b) => {
+      const daysCompare = a.daysToDue - b.daysToDue;
+
+      if (daysCompare !== 0) {
+        return daysCompare;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
   return (
     <section className="grid gap-4 lg:grid-cols-3">
       {cardUsage.map((card) => (
@@ -1161,7 +1223,7 @@ function TransactionsSection({
           </p>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 
@@ -1242,7 +1304,7 @@ function TransactionsSection({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10">
-        <table className="w-full min-w-[1050px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
           <thead className="bg-white/5 text-slate-300">
             <tr>
               <th className="px-4 py-3">Compra</th>
@@ -1288,7 +1350,7 @@ function TransactionsSection({
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
                         <UserRound className="h-3.5 w-3.5" />
-                        {item.responsible || "Sem responsável"}
+                        {normalizeResponsibleName(item.responsible)}
                       </span>
                     </td>
 
@@ -1364,11 +1426,28 @@ function TransactionsSection({
   );
 }
 
-function ChartsSection({ chartData, selectedMonth, setSelectedMonth }) {
+function ChartsSection({
+  chartData,
+  selectedMonth,
+  setSelectedMonth,
+  responsibleOptions,
+  chartResponsibleFilter,
+  setChartResponsibleFilter,
+  selectedChartResponsible,
+  setSelectedChartResponsible,
+  chartDetailsResponsible,
+  chartDetailsRows,
+  cards,
+}) {
+  const detailsTotal = chartDetailsRows.reduce(
+    (acc, item) => acc + Number(item.amount || 0),
+    0
+  );
+
   return (
     <section className="space-y-6">
       <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-2xl backdrop-blur md:p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
               <BarChart3 className="h-4 w-4" />
@@ -1378,34 +1457,210 @@ function ChartsSection({ chartData, selectedMonth, setSelectedMonth }) {
             <h2 className="text-2xl font-bold">Análise dos gastos</h2>
 
             <p className="mt-1 text-sm text-slate-400">
-              Veja os gastos por responsável, cartão, categoria e evolução mensal.
+              Filtre por responsável e clique em uma barra do gráfico para abrir
+              o detalhamento das despesas e parcelas.
             </p>
           </div>
 
-          <MonthPicker
-            selectedMonth={selectedMonth}
-            setSelectedMonth={setSelectedMonth}
-          />
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <MonthPicker
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+            />
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+              <p className="mb-2 text-xs text-slate-500">
+                Responsável nos gráficos
+              </p>
+
+              <select
+                value={chartResponsibleFilter}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setChartResponsibleFilter(value);
+                  setSelectedChartResponsible(value === "all" ? null : value);
+                }}
+                className="h-10 rounded-xl border border-white/10 bg-black/30 px-3 text-sm font-medium text-white outline-none ring-blue-500/40 focus:ring-2"
+              >
+                <option value="all" className="bg-slate-950">
+                  Todos responsáveis
+                </option>
+
+                {responsibleOptions.map((name) => (
+                  <option key={name} value={name} className="bg-slate-950">
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
       </section>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <ChartCard title="Gastos por responsável" description="Baseado no mês selecionado.">
-          <BarChartBlock data={chartData.byResponsible} />
+        <ChartCard
+          title="Gastos por responsável"
+          description="Clique em uma barra para abrir o detalhamento."
+        >
+          <BarChartBlock
+            data={chartData.byResponsible}
+            onItemClick={(name) => setSelectedChartResponsible(name)}
+            valueLabel="Total"
+          />
         </ChartCard>
 
-        <ChartCard title="Gastos por cartão" description="Baseado no mês selecionado.">
-          <BarChartBlock data={chartData.byCard} />
+        <ChartCard
+          title="Gastos por cartão"
+          description="Baseado no mês selecionado e no filtro atual."
+        >
+          <BarChartBlock data={chartData.byCard} valueLabel="Total" />
         </ChartCard>
 
-        <ChartCard title="Gastos por categoria" description="Baseado no mês selecionado.">
-          <PieChartBlock data={chartData.byCategory} />
+        <ChartCard
+          title="Gastos por categoria"
+          description="Baseado no mês selecionado e no filtro atual."
+        >
+          <PieChartBlock data={chartData.byCategory} valueLabel="Total" />
         </ChartCard>
 
-        <ChartCard title="Evolução mensal" description="Últimos meses com compras cadastradas.">
-          <LineChartBlock data={chartData.monthlyEvolution} />
+        <ChartCard
+          title="Evolução mensal"
+          description="Últimos meses com compras cadastradas."
+        >
+          <LineChartBlock
+            data={chartData.monthlyEvolution}
+            valueLabel="Total do mês"
+          />
         </ChartCard>
       </div>
+
+      {chartDetailsResponsible && (
+        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl backdrop-blur md:p-6">
+          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
+                <UserRound className="h-4 w-4" />
+                Detalhamento do responsável
+              </div>
+
+              <h3 className="text-xl font-bold">{chartDetailsResponsible}</h3>
+
+              <p className="mt-1 text-sm text-slate-400">
+                {chartDetailsRows.length} lançamento(s) no mês selecionado •{" "}
+                {BRL.format(detailsTotal)}
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setSelectedChartResponsible(null)}
+                className="rounded-2xl bg-white/10 text-white hover:bg-white/15"
+              >
+                Fechar detalhamento
+              </Button>
+
+              <Button
+                onClick={() => {
+                  setChartResponsibleFilter("all");
+                  setSelectedChartResponsible(null);
+                }}
+                className="rounded-2xl bg-blue-600 hover:bg-blue-500"
+              >
+                Limpar filtro
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-white/10">
+            <table className="w-full min-w-[1000px] border-collapse text-left text-sm">
+              <thead className="bg-white/5 text-slate-300">
+                <tr>
+                  <th className="px-4 py-3">Compra</th>
+                  <th className="px-4 py-3">Vencimento</th>
+                  <th className="px-4 py-3">Descrição</th>
+                  <th className="px-4 py-3">Cartão</th>
+                  <th className="px-4 py-3">Categoria</th>
+                  <th className="px-4 py-3">Parcela</th>
+                  <th className="px-4 py-3 text-right">Valor</th>
+                  <th className="px-4 py-3">Status</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {chartDetailsRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      className="px-4 py-10 text-center text-slate-400"
+                    >
+                      Nenhuma despesa encontrada para este responsável no mês
+                      selecionado.
+                    </td>
+                  </tr>
+                ) : (
+                  chartDetailsRows.map((item) => {
+                    const card = cards.find((card) => card.id === item.cardId);
+
+                    return (
+                      <tr
+                        key={item.id}
+                        className="border-t border-white/10 hover:bg-white/[0.03]"
+                      >
+                        <td className="px-4 py-3 text-slate-300">
+                          {formatDateBR(item.purchaseDate || item.dueDate)}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-300">
+                          {formatDateBR(item.dueDate)}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="font-medium">{item.description}</div>
+                          {item.notes && (
+                            <div className="text-xs text-slate-500">
+                              {item.notes}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-300">
+                          {card?.name || "Removido"}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-300">
+                          {item.category}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-300">
+                          {item.installments > 1
+                            ? `${item.installmentNumber}/${item.installments}`
+                            : "À vista"}
+                        </td>
+
+                        <td className="px-4 py-3 text-right font-semibold">
+                          {BRL.format(item.amount)}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                              item.status === "paid"
+                                ? "bg-emerald-500/15 text-emerald-300"
+                                : "bg-amber-500/15 text-amber-300"
+                            }`}
+                          >
+                            {item.status === "paid" ? "Pago" : "Aberto"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </section>
   );
 }
@@ -1433,29 +1688,57 @@ function EmptyChart() {
   );
 }
 
-function BarChartBlock({ data }) {
+function CustomChartTooltip({
+  active,
+  payload,
+  label,
+  valueLabel = "Total",
+}) {
+  if (!active || !payload?.length) return null;
+
+  const first = payload[0];
+  const rawValue = Number(first?.value ?? first?.payload?.value ?? 0);
+  const title =
+    first?.payload?.name || label || first?.name || "Informação";
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0B1020] px-4 py-3 shadow-2xl">
+      <p className="text-sm font-semibold text-white">{title}</p>
+      <p className="mt-1 text-xs text-slate-400">
+        {valueLabel}:{" "}
+        <span className="font-semibold text-blue-300">
+          {BRL.format(rawValue)}
+        </span>
+      </p>
+    </div>
+  );
+}
+
+function BarChartBlock({ data, onItemClick, valueLabel = "Total" }) {
   if (!data.length) return <EmptyChart />;
 
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="rgba(255,255,255,0.08)"
+          />
           <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
           <YAxis stroke="#94a3b8" fontSize={12} />
-          <Tooltip
-            cursor={{ fill: "rgba(255,255,255,0.05)" }}
-            contentStyle={{
-              background: "#0B1020",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 16,
-              color: "#fff",
-            }}
-            formatter={(value) => BRL.format(value)}
-          />
-          <Bar dataKey="value" radius={[12, 12, 0, 0]}>
+          <Tooltip content={<CustomChartTooltip valueLabel={valueLabel} />} />
+          <Bar
+            dataKey="value"
+            radius={[12, 12, 0, 0]}
+            cursor={onItemClick ? "pointer" : "default"}
+            onClick={(data) => onItemClick?.(data?.name || data?.payload?.name)}
+          >
             {data.map((_, index) => (
-              <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              <Cell
+                key={index}
+                fill={CHART_COLORS[index % CHART_COLORS.length]}
+              />
             ))}
           </Bar>
         </BarChart>
@@ -1464,7 +1747,7 @@ function BarChartBlock({ data }) {
   );
 }
 
-function PieChartBlock({ data }) {
+function PieChartBlock({ data, valueLabel = "Total" }) {
   if (!data.length) return <EmptyChart />;
 
   return (
@@ -1480,43 +1763,33 @@ function PieChartBlock({ data }) {
             paddingAngle={3}
           >
             {data.map((_, index) => (
-              <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              <Cell
+                key={index}
+                fill={CHART_COLORS[index % CHART_COLORS.length]}
+              />
             ))}
           </Pie>
-          <Tooltip
-            contentStyle={{
-              background: "#0B1020",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 16,
-              color: "#fff",
-            }}
-            formatter={(value) => BRL.format(value)}
-          />
+          <Tooltip content={<CustomChartTooltip valueLabel={valueLabel} />} />
         </PieChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-function LineChartBlock({ data }) {
+function LineChartBlock({ data, valueLabel = "Total do mês" }) {
   if (!data.length) return <EmptyChart />;
 
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="rgba(255,255,255,0.08)"
+          />
           <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
           <YAxis stroke="#94a3b8" fontSize={12} />
-          <Tooltip
-            contentStyle={{
-              background: "#0B1020",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 16,
-              color: "#fff",
-            }}
-            formatter={(value) => BRL.format(value)}
-          />
+          <Tooltip content={<CustomChartTooltip valueLabel={valueLabel} />} />
           <Line
             type="monotone"
             dataKey="value"
@@ -1812,8 +2085,8 @@ function CardModal({ card, onClose, onSave }) {
           </p>
           <p className="mt-1 text-sm text-slate-500">
             Ao cadastrar uma compra, o sistema usa esta data para calcular
-            automaticamente a primeira parcela. As próximas parcelas são lançadas
-            nos meses seguintes.
+            automaticamente a primeira parcela. As próximas parcelas são
+            lançadas nos meses seguintes.
           </p>
         </div>
 
