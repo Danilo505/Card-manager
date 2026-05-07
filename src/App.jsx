@@ -13,6 +13,9 @@ import {
   Download,
   Upload,
   X,
+  CalendarDays,
+  Clock3,
+  ShieldAlert,
 } from "lucide-react";
 
 function Card({ className = "", children }) {
@@ -80,6 +83,58 @@ function monthLabel(key) {
   return monthFormatter.format(new Date(year, month - 1, 1));
 }
 
+function daysInMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function formatDateBR(dateString) {
+  if (!dateString) return "-";
+  const [year, month, day] = dateString.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function getNextDueDate(card) {
+  if (card.dueDate) {
+    return card.dueDate;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let year = today.getFullYear();
+  let month = today.getMonth();
+
+  let day = Math.min(Number(card.dueDay || 1), daysInMonth(year, month));
+  let dueDate = new Date(year, month, day);
+
+  if (dueDate < today) {
+    month += 1;
+
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
+
+    day = Math.min(Number(card.dueDay || 1), daysInMonth(year, month));
+    dueDate = new Date(year, month, day);
+  }
+
+  return toISODate(dueDate);
+}
+
+function daysUntil(dateString) {
+  if (!dateString) return 0;
+
+  const [year, month, day] = dateString.split("-").map(Number);
+  const target = new Date(year, month - 1, day);
+  target.setHours(0, 0, 0, 0);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+}
+
 function readStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -101,12 +156,16 @@ const initialData = readStorage() || {
       name: "Nubank",
       limit: 5000,
       color: "from-violet-500 to-fuchsia-500",
+      dueDay: 7,
+      dueDate: "",
     },
     {
       id: uid(),
       name: "Inter",
       limit: 3000,
       color: "from-orange-500 to-amber-400",
+      dueDay: 10,
+      dueDate: "",
     },
   ],
   transactions: [],
@@ -134,7 +193,14 @@ const cardGradients = [
 ];
 
 export default function App() {
-  const [cards, setCards] = useState(initialData.cards);
+  const [cards, setCards] = useState(() =>
+    initialData.cards.map((card) => ({
+      ...card,
+      dueDay: card.dueDay || 1,
+      dueDate: card.dueDate || "",
+    }))
+  );
+
   const [transactions, setTransactions] = useState(initialData.transactions);
   const [selectedMonth, setSelectedMonth] = useState(() =>
     toISODate(new Date()).slice(0, 7)
@@ -162,7 +228,11 @@ export default function App() {
 
   const monthOptions = useMemo(() => {
     const keys = new Set([selectedMonth, toISODate(new Date()).slice(0, 7)]);
-    for (const item of transactions) keys.add(monthKey(item.dueDate));
+
+    for (const item of transactions) {
+      keys.add(monthKey(item.dueDate));
+    }
+
     return [...keys].sort();
   }, [transactions, selectedMonth]);
 
@@ -194,7 +264,9 @@ export default function App() {
     const open = total - paid;
 
     const installmentGroups = new Set(
-      monthTransactions.filter((item) => item.groupId).map((item) => item.groupId)
+      monthTransactions
+        .filter((item) => item.groupId)
+        .map((item) => item.groupId)
     ).size;
 
     return {
@@ -219,17 +291,40 @@ export default function App() {
         .filter((item) => item.cardId === card.id && item.status !== "paid")
         .reduce((acc, item) => acc + Number(item.amount), 0);
 
-      const percent =
-        card.limit > 0 ? Math.min(100, (usedLimit / card.limit) * 100) : 0;
+      const availableLimit = Math.max(Number(card.limit || 0) - usedLimit, 0);
+
+      const usagePercent =
+        Number(card.limit || 0) > 0
+          ? Math.min(100, (usedLimit / Number(card.limit || 0)) * 100)
+          : 0;
+
+      const nextDueDate = getNextDueDate(card);
+
+      const openTransactions = transactions.filter(
+        (item) => item.cardId === card.id && item.status !== "paid"
+      ).length;
+
+      const isOverLimit = usedLimit > Number(card.limit || 0);
 
       return {
         ...card,
         invoiceTotal,
         usedLimit,
-        percent,
+        availableLimit,
+        usagePercent,
+        nextDueDate,
+        daysToDue: daysUntil(nextDueDate),
+        openTransactions,
+        isOverLimit,
       };
     });
   }, [cards, transactions, selectedMonth]);
+
+  const dueDashboard = useMemo(() => {
+    return cardUsage
+      .slice()
+      .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
+  }, [cardUsage]);
 
   function saveTransaction(form) {
     const amount = Number(form.amount);
@@ -241,15 +336,15 @@ export default function App() {
       const next = transactions.map((item) =>
         item.id === editingTransaction.id
           ? {
-            ...item,
-            description: form.description,
-            amount: Number(form.amount),
-            cardId: form.cardId,
-            category: form.category,
-            dueDate: form.dueDate,
-            status: form.status,
-            notes: form.notes,
-          }
+              ...item,
+              description: form.description,
+              amount: Number(form.amount),
+              cardId: form.cardId,
+              category: form.category,
+              dueDate: form.dueDate,
+              status: form.status,
+              notes: form.notes,
+            }
           : item
       );
 
@@ -266,7 +361,7 @@ export default function App() {
       amount:
         index === installments - 1
           ? Math.round((amount - perInstallment * (installments - 1)) * 100) /
-          100
+            100
           : perInstallment,
       cardId: form.cardId,
       category: form.category,
@@ -283,15 +378,24 @@ export default function App() {
   }
 
   function saveCard(form) {
+    const normalizedDueDay = Math.min(
+      31,
+      Math.max(1, Number(form.dueDay || 1))
+    );
+
+    const normalizedDueDate = form.dueDate || "";
+
     if (editingCard) {
       const next = cards.map((card) =>
         card.id === editingCard.id
           ? {
-            ...card,
-            name: form.name,
-            limit: Number(form.limit || 0),
-            color: form.color,
-          }
+              ...card,
+              name: form.name,
+              limit: Number(form.limit || 0),
+              color: form.color,
+              dueDay: normalizedDueDay,
+              dueDate: normalizedDueDate,
+            }
           : card
       );
 
@@ -308,6 +412,8 @@ export default function App() {
         name: form.name,
         limit: Number(form.limit || 0),
         color: form.color,
+        dueDay: normalizedDueDay,
+        dueDate: normalizedDueDate,
       },
     ];
 
@@ -371,9 +477,18 @@ export default function App() {
           return;
         }
 
-        setCards(data.cards);
+        const normalizedCards = data.cards.map((card) => ({
+          ...card,
+          dueDay: card.dueDay || 1,
+          dueDate: card.dueDate || "",
+        }));
+
+        setCards(normalizedCards);
         setTransactions(data.transactions);
-        writeStorage(data);
+        writeStorage({
+          cards: normalizedCards,
+          transactions: data.transactions,
+        });
       } catch {
         return;
       }
@@ -460,6 +575,91 @@ export default function App() {
           />
         </section>
 
+        <section className="mb-6 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl backdrop-blur md:p-6">
+          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+                <CalendarDays className="h-4 w-4" />
+                Agenda financeira
+              </div>
+
+              <h2 className="text-xl font-bold">Dashboard de vencimentos</h2>
+
+              <p className="text-sm text-slate-400">
+                Veja os próximos vencimentos, a fatura do mês e o limite
+                disponível de cada cartão.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+              <p className="text-xs text-slate-500">Mês selecionado</p>
+              <p className="text-sm font-semibold capitalize">
+                {monthLabel(selectedMonth)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {dueDashboard.map((card) => (
+              <Card
+                key={`due-${card.id}`}
+                className="rounded-3xl border border-white/10 bg-white/[0.03] text-white shadow-xl"
+              >
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold">{card.name}</p>
+                      <p className="text-sm text-slate-400">
+                        {card.dueDate
+                          ? "Data definida manualmente"
+                          : `Vencimento todo dia ${String(
+                              card.dueDay || 1
+                            ).padStart(2, "0")}`}
+                      </p>
+                    </div>
+
+                    <DueBadge days={card.daysToDue} />
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <InfoBox
+                      title="Próximo vencimento"
+                      value={formatDateBR(card.nextDueDate)}
+                    />
+
+                    <InfoBox
+                      title="Fatura do mês"
+                      value={BRL.format(card.invoiceTotal)}
+                    />
+
+                    <InfoBox
+                      title="Limite disponível"
+                      value={BRL.format(card.availableLimit)}
+                      valueClassName={
+                        card.availableLimit <= 0
+                          ? "text-red-300"
+                          : "text-emerald-300"
+                      }
+                    />
+
+                    <InfoBox
+                      title="Itens em aberto"
+                      value={card.openTransactions}
+                    />
+                  </div>
+
+                  {card.isOverLimit && (
+                    <div className="mt-4 flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                      <ShieldAlert className="h-4 w-4" />
+                      Este cartão ultrapassou o limite cadastrado.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+
         <section className="mb-6 grid gap-4 lg:grid-cols-3">
           {cardUsage.map((card) => (
             <motion.div key={card.id} layout>
@@ -482,26 +682,63 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="flex items-end justify-between">
+                  <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm text-slate-400">
-                        Limite usado
-                      </p>
+                      <p className="text-sm text-slate-400">Limite usado</p>
+
                       <p className="text-2xl font-bold">
                         {BRL.format(card.usedLimit)}
                       </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        Fatura do mês: {BRL.format(card.invoiceTotal)}
+                      </p>
                     </div>
 
-                    <p className="text-sm text-slate-400">
-                      {card.percent.toFixed(0)}%
-                    </p>
+                    <div className="text-right">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Disponível
+                      </p>
+
+                      <p
+                        className={`text-lg font-semibold ${
+                          card.availableLimit <= 0
+                            ? "text-red-300"
+                            : "text-emerald-300"
+                        }`}
+                      >
+                        {BRL.format(card.availableLimit)}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="mt-4 h-2 rounded-full bg-white/10">
                     <div
-                      className="h-2 rounded-full bg-white"
-                      style={{ width: `${card.percent}%` }}
+                      className={`h-2 rounded-full ${
+                        card.isOverLimit ? "bg-red-300" : "bg-white"
+                      }`}
+                      style={{ width: `${card.usagePercent}%` }}
                     />
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                    <span>Usado {BRL.format(card.usedLimit)}</span>
+                    <span>Total {BRL.format(card.limit)}</span>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-slate-300">
+                      <Clock3 className="h-3.5 w-3.5" />
+                      Vence em {formatDateBR(card.nextDueDate)}
+                    </span>
+
+                    <span className="text-slate-400">
+                      {card.daysToDue === 0
+                        ? "vence hoje"
+                        : card.daysToDue < 0
+                        ? `${Math.abs(card.daysToDue)} dias atrasado`
+                        : `${card.daysToDue} dias`}
+                    </span>
                   </div>
 
                   <div className="mt-5 flex gap-2">
@@ -533,6 +770,7 @@ export default function App() {
           <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="text-xl font-bold">Compras e parcelas</h2>
+
               <p className="text-sm text-slate-400">
                 Visualize a fatura por mês, cartão, categoria ou descrição.
               </p>
@@ -678,10 +916,11 @@ export default function App() {
                         <td className="px-4 py-3">
                           <button
                             onClick={() => togglePaid(item.id)}
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${item.status === "paid"
+                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                              item.status === "paid"
                                 ? "bg-emerald-500/15 text-emerald-300"
                                 : "bg-amber-500/15 text-amber-300"
-                              }`}
+                            }`}
                           >
                             {item.status === "paid" ? "Pago" : "Aberto"}
                           </button>
@@ -758,6 +997,41 @@ function MetricCard({ icon: Icon, title, value, subtitle }) {
         <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function InfoBox({ title, value, valueClassName = "" }) {
+  return (
+    <div className="rounded-2xl bg-white/5 p-4">
+      <p className="text-xs text-slate-500">{title}</p>
+      <p className={`mt-1 text-lg font-semibold ${valueClassName}`}>{value}</p>
+    </div>
+  );
+}
+
+function DueBadge({ days }) {
+  let className = "bg-blue-500/10 text-blue-300";
+  let label = `${days} dias`;
+
+  if (days < 0) {
+    className = "bg-red-500/10 text-red-300";
+    label = `${Math.abs(days)} dias atrasado`;
+  } else if (days === 0) {
+    className = "bg-red-500/10 text-red-300";
+    label = "vence hoje";
+  } else if (days <= 3) {
+    className = "bg-red-500/10 text-red-300";
+  } else if (days <= 7) {
+    className = "bg-amber-500/10 text-amber-300";
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${className}`}
+    >
+      <Clock3 className="h-3.5 w-3.5" />
+      {label}
+    </span>
   );
 }
 
@@ -906,6 +1180,8 @@ function CardModal({ card, onClose, onSave }) {
     name: card?.name || "",
     limit: card?.limit || "",
     color: card?.color || cardGradients[0],
+    dueDay: card?.dueDay || 1,
+    dueDate: card?.dueDate || "",
   });
 
   function submit(event) {
@@ -928,14 +1204,40 @@ function CardModal({ card, onClose, onSave }) {
           placeholder="Ex: Itaú Click"
         />
 
-        <Input
-          label="Limite"
-          type="number"
-          step="0.01"
-          value={form.limit}
-          onChange={(value) => setForm({ ...form, limit: value })}
-          placeholder="5000"
-        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Limite"
+            type="number"
+            step="0.01"
+            value={form.limit}
+            onChange={(value) => setForm({ ...form, limit: value })}
+            placeholder="5000"
+          />
+
+          <Input
+            label="Data do próximo vencimento"
+            type="date"
+            value={form.dueDate}
+            onChange={(value) => {
+              const day = value ? Number(value.split("-")[2]) : form.dueDay;
+              setForm({
+                ...form,
+                dueDate: value,
+                dueDay: day,
+              });
+            }}
+          />
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p className="text-sm font-medium text-slate-300">
+            Como funciona o vencimento
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            Escolha a data exata do próximo vencimento. O sistema usa essa data
+            no dashboard e também salva o dia para referência do cartão.
+          </p>
+        </div>
 
         <div>
           <label className="mb-2 block text-sm text-slate-300">Cor</label>
@@ -946,8 +1248,9 @@ function CardModal({ card, onClose, onSave }) {
                 type="button"
                 key={color}
                 onClick={() => setForm({ ...form, color })}
-                className={`h-12 rounded-2xl bg-gradient-to-br ${color} ${form.color === color ? "ring-2 ring-white" : ""
-                  }`}
+                className={`h-12 rounded-2xl bg-gradient-to-br ${color} ${
+                  form.color === color ? "ring-2 ring-white" : ""
+                }`}
               />
             ))}
           </div>
@@ -992,7 +1295,10 @@ function ModalShell({ title, children, onClose }) {
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-xl font-bold">{title}</h3>
 
-          <button onClick={onClose} className="rounded-2xl p-2 hover:bg-white/10">
+          <button
+            onClick={onClose}
+            className="rounded-2xl p-2 hover:bg-white/10"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
