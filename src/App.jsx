@@ -330,7 +330,6 @@ export default function App() {
     const amount = Number(form.amount);
     const installments = Math.max(1, Number(form.installments));
     const perInstallment = Math.round((amount / installments) * 100) / 100;
-    const groupId = installments > 1 ? uid() : null;
 
     if (editingTransaction) {
       const next = transactions.map((item) =>
@@ -342,6 +341,7 @@ export default function App() {
               cardId: form.cardId,
               category: form.category,
               dueDate: form.dueDate,
+              purchaseDate: form.purchaseDate,
               status: form.status,
               notes: form.notes,
             }
@@ -354,6 +354,14 @@ export default function App() {
       return;
     }
 
+    const selectedCard = cards.find((card) => card.id === form.cardId);
+
+    const firstInstallmentDate = selectedCard
+      ? getNextDueDate(selectedCard)
+      : form.purchaseDate || toISODate(new Date());
+
+    const groupId = installments > 1 ? uid() : null;
+
     const created = Array.from({ length: installments }).map((_, index) => ({
       id: uid(),
       groupId,
@@ -365,7 +373,8 @@ export default function App() {
           : perInstallment,
       cardId: form.cardId,
       category: form.category,
-      dueDate: addMonths(form.dueDate, index),
+      dueDate: addMonths(firstInstallmentDate, index),
+      purchaseDate: form.purchaseDate,
       installmentNumber: index + 1,
       installments,
       status: "open",
@@ -483,11 +492,16 @@ export default function App() {
           dueDate: card.dueDate || "",
         }));
 
+        const normalizedTransactions = data.transactions.map((transaction) => ({
+          ...transaction,
+          purchaseDate: transaction.purchaseDate || transaction.dueDate || "",
+        }));
+
         setCards(normalizedCards);
-        setTransactions(data.transactions);
+        setTransactions(normalizedTransactions);
         writeStorage({
           cards: normalizedCards,
-          transactions: data.transactions,
+          transactions: normalizedTransactions,
         });
       } catch {
         return;
@@ -518,8 +532,8 @@ export default function App() {
             </h1>
 
             <p className="mt-3 max-w-2xl text-slate-400">
-              Cadastre compras à vista ou parceladas. O sistema cria
-              automaticamente as parcelas nos próximos meses.
+              Cadastre compras à vista ou parceladas. O sistema cria as parcelas
+              automaticamente com base no vencimento do cartão.
             </p>
           </div>
 
@@ -846,10 +860,11 @@ export default function App() {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-white/10">
-            <table className="w-full min-w-[850px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[950px] border-collapse text-left text-sm">
               <thead className="bg-white/5 text-slate-300">
                 <tr>
-                  <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Compra</th>
+                  <th className="px-4 py-3">Vencimento</th>
                   <th className="px-4 py-3">Descrição</th>
                   <th className="px-4 py-3">Cartão</th>
                   <th className="px-4 py-3">Categoria</th>
@@ -864,7 +879,7 @@ export default function App() {
                 {filteredTransactions.length === 0 ? (
                   <tr>
                     <td
-                      colSpan="8"
+                      colSpan="9"
                       className="px-4 py-12 text-center text-slate-400"
                     >
                       Nenhuma compra encontrada para este mês.
@@ -880,7 +895,11 @@ export default function App() {
                         className="border-t border-white/10 hover:bg-white/[0.03]"
                       >
                         <td className="px-4 py-3 text-slate-300">
-                          {item.dueDate.split("-").reverse().join("/")}
+                          {formatDateBR(item.purchaseDate || item.dueDate)}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-300">
+                          {formatDateBR(item.dueDate)}
                         </td>
 
                         <td className="px-4 py-3">
@@ -1041,11 +1060,16 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
     amount: transaction?.amount || "",
     cardId: transaction?.cardId || cards[0]?.id || "",
     category: transaction?.category || "Outros",
-    dueDate: transaction?.dueDate || toISODate(new Date()),
+    dueDate: transaction?.dueDate || "",
+    purchaseDate:
+      transaction?.purchaseDate || transaction?.dueDate || toISODate(new Date()),
     installments: transaction?.installments || 1,
     status: transaction?.status || "open",
     notes: transaction?.notes || "",
   });
+
+  const selectedCard = cards.find((card) => card.id === form.cardId);
+  const automaticDueDate = selectedCard ? getNextDueDate(selectedCard) : "";
 
   function submit(event) {
     event.preventDefault();
@@ -1054,12 +1078,16 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
       return;
     }
 
+    if (transaction && !form.dueDate) {
+      return;
+    }
+
     onSave(form);
   }
 
   return (
     <ModalShell
-      title={transaction ? "Editar compra" : "Nova compra"}
+      title={transaction ? "Editar parcela" : "Nova compra"}
       onClose={onClose}
     >
       <form onSubmit={submit} className="space-y-4">
@@ -1067,12 +1095,12 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
           label="Descrição"
           value={form.description}
           onChange={(value) => setForm({ ...form, description: value })}
-          placeholder="Ex: Notebook Dell"
+          placeholder="Ex: Amazon - Monitor"
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
-            label="Valor total"
+            label={transaction ? "Valor da parcela" : "Valor total"}
             type="number"
             step="0.01"
             value={form.amount}
@@ -1081,10 +1109,10 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
           />
 
           <Input
-            label="Data da primeira parcela"
+            label="Data da compra"
             type="date"
-            value={form.dueDate}
-            onChange={(value) => setForm({ ...form, dueDate: value })}
+            value={form.purchaseDate}
+            onChange={(value) => setForm({ ...form, purchaseDate: value })}
           />
         </div>
 
@@ -1121,6 +1149,26 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
             ))}
           </Select>
         </div>
+
+        {!transaction && (
+          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 text-sm text-blue-200">
+            <p className="font-medium">Vencimento calculado automaticamente</p>
+            <p className="mt-1 text-blue-200/80">
+              A primeira parcela será lançada em{" "}
+              <strong>{formatDateBR(automaticDueDate)}</strong>, usando o
+              vencimento definido no cartão selecionado.
+            </p>
+          </div>
+        )}
+
+        {transaction && (
+          <Input
+            label="Data de vencimento da parcela"
+            type="date"
+            value={form.dueDate}
+            onChange={(value) => setForm({ ...form, dueDate: value })}
+          />
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
@@ -1234,8 +1282,9 @@ function CardModal({ card, onClose, onSave }) {
             Como funciona o vencimento
           </p>
           <p className="mt-1 text-sm text-slate-500">
-            Escolha a data exata do próximo vencimento. O sistema usa essa data
-            no dashboard e também salva o dia para referência do cartão.
+            Ao cadastrar uma compra, o sistema usa esta data para calcular
+            automaticamente a primeira parcela. As próximas parcelas são lançadas
+            nos meses seguintes.
           </p>
         </div>
 
