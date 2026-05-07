@@ -18,7 +18,23 @@ import {
   ShieldAlert,
   LayoutDashboard,
   ListChecks,
+  BarChart3,
+  UserRound,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+} from "recharts";
 
 function Card({ className = "", children }) {
   return <div className={className}>{children}</div>;
@@ -33,7 +49,6 @@ function Button({
   children,
   type = "button",
   onClick,
-  variant,
   ...props
 }) {
   return (
@@ -59,6 +74,17 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
 });
 
 const STORAGE_KEY = "organizador-cartoes-v1";
+
+const CHART_COLORS = [
+  "#2563eb",
+  "#22c55e",
+  "#f97316",
+  "#a855f7",
+  "#ef4444",
+  "#06b6d4",
+  "#eab308",
+  "#ec4899",
+];
 
 function uid() {
   return crypto.randomUUID
@@ -96,9 +122,7 @@ function formatDateBR(dateString) {
 }
 
 function getNextDueDate(card) {
-  if (card.dueDate) {
-    return card.dueDate;
-  }
+  if (card.dueDate) return card.dueDate;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -149,6 +173,22 @@ function readStorage() {
 
 function writeStorage(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function sumBy(items, getKey) {
+  const map = new Map();
+
+  for (const item of items) {
+    const key = getKey(item) || "Sem informação";
+    map.set(key, (map.get(key) || 0) + Number(item.amount || 0));
+  }
+
+  return [...map.entries()]
+    .map(([name, value]) => ({
+      name,
+      value: Math.round(value * 100) / 100,
+    }))
+    .sort((a, b) => b.value - a.value);
 }
 
 const initialData = readStorage() || {
@@ -203,12 +243,20 @@ export default function App() {
     }))
   );
 
-  const [transactions, setTransactions] = useState(initialData.transactions);
+  const [transactions, setTransactions] = useState(() =>
+    initialData.transactions.map((transaction) => ({
+      ...transaction,
+      purchaseDate: transaction.purchaseDate || transaction.dueDate || "",
+      responsible: transaction.responsible || "",
+    }))
+  );
+
   const [selectedMonth, setSelectedMonth] = useState(() =>
     toISODate(new Date()).slice(0, 7)
   );
   const [query, setQuery] = useState("");
   const [cardFilter, setCardFilter] = useState("all");
+  const [responsibleFilter, setResponsibleFilter] = useState("all");
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -239,16 +287,33 @@ export default function App() {
     return [...keys].sort();
   }, [transactions, selectedMonth]);
 
+  const responsibleOptions = useMemo(() => {
+    const names = new Set();
+
+    for (const item of transactions) {
+      if (item.responsible?.trim()) {
+        names.add(item.responsible.trim());
+      }
+    }
+
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [transactions]);
+
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter((item) => monthKey(item.dueDate) === selectedMonth)
       .filter((item) => cardFilter === "all" || item.cardId === cardFilter)
+      .filter(
+        (item) =>
+          responsibleFilter === "all" ||
+          (item.responsible || "Sem responsável") === responsibleFilter
+      )
       .filter((item) => {
-        const text = `${item.description} ${item.category}`.toLowerCase();
+        const text = `${item.description} ${item.category} ${item.responsible}`.toLowerCase();
         return text.includes(query.toLowerCase());
       })
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [transactions, selectedMonth, cardFilter, query]);
+  }, [transactions, selectedMonth, cardFilter, responsibleFilter, query]);
 
   const summary = useMemo(() => {
     const monthTransactions = transactions.filter(
@@ -329,6 +394,47 @@ export default function App() {
       .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
   }, [cardUsage]);
 
+  const chartData = useMemo(() => {
+    const monthTransactions = transactions.filter(
+      (item) => monthKey(item.dueDate) === selectedMonth
+    );
+
+    const byResponsible = sumBy(
+      monthTransactions,
+      (item) => item.responsible || "Sem responsável"
+    );
+
+    const byCategory = sumBy(monthTransactions, (item) => item.category);
+
+    const byCard = sumBy(monthTransactions, (item) => {
+      const card = cards.find((card) => card.id === item.cardId);
+      return card?.name || "Cartão removido";
+    });
+
+    const monthlyMap = new Map();
+
+    for (const item of transactions) {
+      const key = monthKey(item.dueDate);
+      monthlyMap.set(key, (monthlyMap.get(key) || 0) + Number(item.amount || 0));
+    }
+
+    const monthlyEvolution = [...monthlyMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([month, value]) => ({
+        month,
+        name: monthLabel(month).replace(" de ", "/"),
+        value: Math.round(value * 100) / 100,
+      }));
+
+    return {
+      byResponsible,
+      byCategory,
+      byCard,
+      monthlyEvolution,
+    };
+  }, [transactions, selectedMonth, cards]);
+
   function saveTransaction(form) {
     const amount = Number(form.amount);
     const installments = Math.max(1, Number(form.installments));
@@ -340,6 +446,7 @@ export default function App() {
           ? {
               ...item,
               description: form.description,
+              responsible: form.responsible,
               amount: Number(form.amount),
               cardId: form.cardId,
               category: form.category,
@@ -369,6 +476,7 @@ export default function App() {
       id: uid(),
       groupId,
       description: form.description,
+      responsible: form.responsible,
       amount:
         index === installments - 1
           ? Math.round((amount - perInstallment * (installments - 1)) * 100) /
@@ -498,6 +606,7 @@ export default function App() {
         const normalizedTransactions = data.transactions.map((transaction) => ({
           ...transaction,
           purchaseDate: transaction.purchaseDate || transaction.dueDate || "",
+          responsible: transaction.responsible || "",
         }));
 
         setCards(normalizedCards);
@@ -584,6 +693,13 @@ export default function App() {
               icon={ListChecks}
               label="Compras"
             />
+
+            <NavButton
+              active={activeView === "charts"}
+              onClick={() => setActiveView("charts")}
+              icon={BarChart3}
+              label="Gráficos"
+            />
           </nav>
         </header>
 
@@ -648,6 +764,9 @@ export default function App() {
                 monthOptions={monthOptions}
                 cardFilter={cardFilter}
                 setCardFilter={setCardFilter}
+                responsibleFilter={responsibleFilter}
+                setResponsibleFilter={setResponsibleFilter}
+                responsibleOptions={responsibleOptions}
                 cards={cards}
                 filteredTransactions={filteredTransactions}
                 togglePaid={togglePaid}
@@ -656,6 +775,22 @@ export default function App() {
                 setShowTransactionModal={setShowTransactionModal}
                 exportJSON={exportJSON}
                 importJSON={importJSON}
+              />
+            </motion.div>
+          )}
+
+          {activeView === "charts" && (
+            <motion.div
+              key="charts"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.18 }}
+            >
+              <ChartsSection
+                chartData={chartData}
+                selectedMonth={selectedMonth}
+                setSelectedMonth={setSelectedMonth}
               />
             </motion.div>
           )}
@@ -998,6 +1133,9 @@ function TransactionsSection({
   monthOptions,
   cardFilter,
   setCardFilter,
+  responsibleFilter,
+  setResponsibleFilter,
+  responsibleOptions,
   cards,
   filteredTransactions,
   togglePaid,
@@ -1019,7 +1157,7 @@ function TransactionsSection({
           <h2 className="text-xl font-bold">Compras e parcelas</h2>
 
           <p className="text-sm text-slate-400">
-            Visualize a fatura por mês, cartão, categoria ou descrição.
+            Visualize a fatura por mês, cartão, categoria, descrição ou responsável.
           </p>
         </div>
 
@@ -1062,13 +1200,28 @@ function TransactionsSection({
               </option>
             ))}
           </select>
+
+          <select
+            value={responsibleFilter}
+            onChange={(e) => setResponsibleFilter(e.target.value)}
+            className="h-11 rounded-2xl border border-white/10 bg-black/30 px-3 text-sm outline-none ring-blue-500/40 focus:ring-2"
+          >
+            <option value="all" className="bg-slate-950">
+              Todos responsáveis
+            </option>
+
+            {responsibleOptions.map((name) => (
+              <option key={name} value={name} className="bg-slate-950">
+                {name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-3">
         <Button
           onClick={exportJSON}
-          variant="secondary"
           className="rounded-2xl bg-white/10 text-white hover:bg-white/15"
         >
           <Download className="mr-2 h-4 w-4" />
@@ -1089,11 +1242,12 @@ function TransactionsSection({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10">
-        <table className="w-full min-w-[950px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1050px] border-collapse text-left text-sm">
           <thead className="bg-white/5 text-slate-300">
             <tr>
               <th className="px-4 py-3">Compra</th>
               <th className="px-4 py-3">Vencimento</th>
+              <th className="px-4 py-3">Responsável</th>
               <th className="px-4 py-3">Descrição</th>
               <th className="px-4 py-3">Cartão</th>
               <th className="px-4 py-3">Categoria</th>
@@ -1108,7 +1262,7 @@ function TransactionsSection({
             {filteredTransactions.length === 0 ? (
               <tr>
                 <td
-                  colSpan="9"
+                  colSpan="10"
                   className="px-4 py-12 text-center text-slate-400"
                 >
                   Nenhuma compra encontrada para este mês.
@@ -1129,6 +1283,13 @@ function TransactionsSection({
 
                     <td className="px-4 py-3 text-slate-300">
                       {formatDateBR(item.dueDate)}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
+                        <UserRound className="h-3.5 w-3.5" />
+                        {item.responsible || "Sem responsável"}
+                      </span>
                     </td>
 
                     <td className="px-4 py-3">
@@ -1203,6 +1364,173 @@ function TransactionsSection({
   );
 }
 
+function ChartsSection({ chartData, selectedMonth, setSelectedMonth }) {
+  return (
+    <section className="space-y-6">
+      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-2xl backdrop-blur md:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+              <BarChart3 className="h-4 w-4" />
+              Gráficos
+            </div>
+
+            <h2 className="text-2xl font-bold">Análise dos gastos</h2>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Veja os gastos por responsável, cartão, categoria e evolução mensal.
+            </p>
+          </div>
+
+          <MonthPicker
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+          />
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <ChartCard title="Gastos por responsável" description="Baseado no mês selecionado.">
+          <BarChartBlock data={chartData.byResponsible} />
+        </ChartCard>
+
+        <ChartCard title="Gastos por cartão" description="Baseado no mês selecionado.">
+          <BarChartBlock data={chartData.byCard} />
+        </ChartCard>
+
+        <ChartCard title="Gastos por categoria" description="Baseado no mês selecionado.">
+          <PieChartBlock data={chartData.byCategory} />
+        </ChartCard>
+
+        <ChartCard title="Evolução mensal" description="Últimos meses com compras cadastradas.">
+          <LineChartBlock data={chartData.monthlyEvolution} />
+        </ChartCard>
+      </div>
+    </section>
+  );
+}
+
+function ChartCard({ title, description, children }) {
+  return (
+    <Card className="rounded-3xl border border-white/10 bg-white/[0.04] text-white shadow-2xl backdrop-blur">
+      <CardContent className="p-5">
+        <div className="mb-4">
+          <h3 className="text-lg font-bold">{title}</h3>
+          <p className="text-sm text-slate-400">{description}</p>
+        </div>
+
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyChart() {
+  return (
+    <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-white/10 text-sm text-slate-500">
+      Sem dados para exibir.
+    </div>
+  );
+}
+
+function BarChartBlock({ data }) {
+  if (!data.length) return <EmptyChart />;
+
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+          <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+          <YAxis stroke="#94a3b8" fontSize={12} />
+          <Tooltip
+            cursor={{ fill: "rgba(255,255,255,0.05)" }}
+            contentStyle={{
+              background: "#0B1020",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 16,
+              color: "#fff",
+            }}
+            formatter={(value) => BRL.format(value)}
+          />
+          <Bar dataKey="value" radius={[12, 12, 0, 0]}>
+            {data.map((_, index) => (
+              <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function PieChartBlock({ data }) {
+  if (!data.length) return <EmptyChart />;
+
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            innerRadius={60}
+            outerRadius={100}
+            paddingAngle={3}
+          >
+            {data.map((_, index) => (
+              <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip
+            contentStyle={{
+              background: "#0B1020",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 16,
+              color: "#fff",
+            }}
+            formatter={(value) => BRL.format(value)}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function LineChartBlock({ data }) {
+  if (!data.length) return <EmptyChart />;
+
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+          <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+          <YAxis stroke="#94a3b8" fontSize={12} />
+          <Tooltip
+            contentStyle={{
+              background: "#0B1020",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 16,
+              color: "#fff",
+            }}
+            formatter={(value) => BRL.format(value)}
+          />
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke="#2563eb"
+            strokeWidth={3}
+            dot={{ r: 4 }}
+            activeDot={{ r: 6 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function MetricCard({ icon: Icon, title, value, subtitle }) {
   return (
     <Card className="rounded-3xl border-white/10 bg-white/[0.04] text-white shadow-2xl backdrop-blur">
@@ -1257,6 +1585,7 @@ function DueBadge({ days }) {
 function TransactionModal({ cards, transaction, onClose, onSave }) {
   const [form, setForm] = useState({
     description: transaction?.description || "",
+    responsible: transaction?.responsible || "",
     amount: transaction?.amount || "",
     cardId: transaction?.cardId || cards[0]?.id || "",
     category: transaction?.category || "Outros",
@@ -1291,12 +1620,21 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
       onClose={onClose}
     >
       <form onSubmit={submit} className="space-y-4">
-        <Input
-          label="Descrição"
-          value={form.description}
-          onChange={(value) => setForm({ ...form, description: value })}
-          placeholder="Ex: Amazon - Monitor"
-        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Descrição"
+            value={form.description}
+            onChange={(value) => setForm({ ...form, description: value })}
+            placeholder="Ex: Amazon - Monitor"
+          />
+
+          <Input
+            label="Responsável"
+            value={form.responsible}
+            onChange={(value) => setForm({ ...form, responsible: value })}
+            placeholder="Ex: Pai, Sogra, Eu"
+          />
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
@@ -1397,7 +1735,6 @@ function TransactionModal({ cards, transaction, onClose, onSave }) {
           <Button
             type="button"
             onClick={onClose}
-            variant="secondary"
             className="rounded-2xl bg-white/10 text-white hover:bg-white/15"
           >
             Cancelar
@@ -1475,8 +1812,8 @@ function CardModal({ card, onClose, onSave }) {
           </p>
           <p className="mt-1 text-sm text-slate-500">
             Ao cadastrar uma compra, o sistema usa esta data para calcular
-            automaticamente a primeira parcela. As próximas parcelas são
-            lançadas nos meses seguintes.
+            automaticamente a primeira parcela. As próximas parcelas são lançadas
+            nos meses seguintes.
           </p>
         </div>
 
@@ -1501,7 +1838,6 @@ function CardModal({ card, onClose, onSave }) {
           <Button
             type="button"
             onClick={onClose}
-            variant="secondary"
             className="rounded-2xl bg-white/10 text-white hover:bg-white/15"
           >
             Cancelar
